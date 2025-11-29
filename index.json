@@ -1,0 +1,7 @@
+{
+  "name": "rag-index",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": false, "sortable": false, "facetable": false },
+    { "name": "content", "type": "Edm.String", "searchable": true, "retrievable": true }
+  ]
+}

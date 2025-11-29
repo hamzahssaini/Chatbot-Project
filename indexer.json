@@ -1,0 +1,7 @@
+{
+  "name": "rag-indexer",
+  "dataSourceName": "rag-datasource",
+  "targetIndexName": "rag-index",
+  "skillsetName": "rag-skillset",
+  "schedule": { "interval": "PT1H" }
+}

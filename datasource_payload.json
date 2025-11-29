@@ -1,0 +1,11 @@
+﻿{
+  "name": "rag-datasource",
+  "description": "Azure Blob Storage datasource for RAG",
+  "type": "azureblob",
+  "credentials": {
+    "connectionString": "${AZURE_BLOB_CONNECTION_STRING}"
+  },
+  "container": {
+    "name": "container-rag"
+  }
+}

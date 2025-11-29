@@ -1,0 +1,17 @@
+{
+  "name": "rag-skillset",
+  "description": "Split PDFs into pages for RAG pipeline",
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+      "textSplitMode": "pages",
+      "maximumPageLength": 3000,
+      "inputs": [
+        { "name": "text", "source": "/document/content" }
+      ],
+      "outputs": [
+        { "name": "textItems", "targetName": "pages" }
+      ]
+    }
+  ]
+}

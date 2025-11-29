@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HamzaCloudChat</title>
+  <script>
+    (function(){
+      try{
+        const saved = localStorage.getItem('hc-theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'dark':'light'));
+      }catch(e){}
+    })();
+  </script>
+  <style>
+    :root{
+      --bg-start:#e0f7fa; --bg-end:#ffffff;
+      --primary:#0078D7; --muted:#51606b;
+      --panel-bg:rgba(255,255,255,0.95); --text:#043048;
+      --bubble-user-start:#0078D7; --bubble-user-end:#2ea0ff;
+      --border-color:rgba(7,40,60,0.06); --shadow-color:rgba(2,24,58,0.08);
+      --sidebar-bg:linear-gradient(180deg,rgba(255,255,255,0.85),rgba(255,255,255,0.92));
+      --main-bg:linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,255,255,0.98));
+      font-family:Inter,"Segoe UI",Roboto,Arial,sans-serif;
+    }
+    [data-theme="dark"]{
+      --bg-start:#071123; --bg-end:#08111a;
+      --primary:#7c3aed; --muted:#94a3b8;
+      --panel-bg:rgba(10,14,20,0.6); --text:#e6eef8;
+      --bubble-user-start:#6ee7b7; --bubble-user-end:#34d399;
+      --border-color:rgba(255,255,255,0.06); --shadow-color:rgba(2,6,23,0.55);
+      --sidebar-bg:linear-gradient(180deg,rgba(8,12,18,0.86),rgba(8,12,18,0.94));
+      --main-bg:linear-gradient(180deg,rgba(10,14,20,0.80),rgba(10,14,20,0.88));
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{
+      background:
+        radial-gradient(1200px 400px at 10% 10%, rgba(0,120,215,0.06), transparent 8%),
+        linear-gradient(180deg,var(--bg-start),var(--bg-end));
+      -webkit-font-smoothing:antialiased;
+      color:var(--text);
+    }
+
+    .app{
+      position:fixed; inset:0;
+      display:grid;
+      grid-template-columns:280px 1fr;
+      background:var(--panel-bg);
+      backdrop-filter:blur(8px);
+    }
+
+    .sidebar{
+      display:flex; flex-direction:column;
+      padding:16px; height:100%;
+      background:var(--sidebar-bg);
+      border-right:1px solid var(--border-color);
+    }
+
+    .new-chat{
+      display:flex; gap:8px; align-items:center;
+      padding:12px; border-radius:12px;
+      background:linear-gradient(90deg,rgba(0,120,215,0.12),rgba(0,120,215,0.04));
+      color:var(--primary); font-weight:600;
+      cursor:pointer; user-select:none;
+      box-shadow:0 8px 24px var(--shadow-color);
+    }
+    [data-theme="dark"] .new-chat{
+      background:linear-gradient(90deg,rgba(124,58,237,0.16),rgba(124,58,237,0.06));
+    }
+
+    .conversations{
+      margin-top:12px;
+      flex:1; overflow:auto;
+      display:flex; flex-direction:column; gap:8px;
+      padding-right:6px;
+    }
+    .conv{
+      padding:10px 12px; border-radius:10px;
+      cursor:pointer; color:var(--muted);
+      display:flex; gap:10px; align-items:center;
+      transition:background .14s,color .14s;
+    }
+    .conv:hover{background:rgba(0,0,0,0.04)}
+    [data-theme="dark"] .conv:hover{background:rgba(255,255,255,0.04)}
+    .conv.active{background:rgba(0,120,215,0.09); color:var(--primary)}
+    [data-theme="dark"] .conv.active{background:rgba(124,58,237,0.12); color:#c4b5fd}
+
+    .sidebar-footer{
+      margin-top:auto; display:flex; align-items:center; gap:8px;
+      justify-content:space-between; padding-top:12px;
+      border-top:1px solid var(--border-color);
+      color:var(--muted); font-size:13px;
+    }
+    .model-label{font-size:13px;color:var(--muted)}
+    .model-select{
+      -webkit-appearance:none; appearance:none;
+      padding:10px 36px 10px 10px;
+      border-radius:10px; border:1px solid var(--border-color);
+      background:transparent; color:var(--muted); font-size:13px;
+      background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+      background-position:right .6rem center;
+      background-repeat:no-repeat; background-size:1.25em 1.25em;
+    }
+    .model-select:focus-visible{outline:2px solid var(--primary); outline-offset:2px}
+    [data-theme="dark"] .model-select{
+      background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    }
+    .model-select option{color:#043048; background:#ffffff}
+
+    .main{
+      display:flex; 
+      flex-direction:column; 
+      height:100%; 
+      background:var(--main-bg);
+      min-height: 0; 
+      overflow: hidden;
+    }
+
+    .header{
+      flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+      padding:16px 18px; border-bottom:1px solid var(--border-color); backdrop-filter:blur(4px);
+    }
+    .title{display:flex; gap:12px; align-items:center}
+    .avatar{
+      width:44px;height:44px;border-radius:12px;
+      background:linear-gradient(135deg,var(--primary),#2ea0ff);
+      display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;
+      box-shadow:0 8px 24px var(--shadow-color);
+    }
+    [data-theme="dark"] .avatar{background:linear-gradient(135deg,#7c3aed,#a855f7)}
+    .title h1{margin:0;font-size:16px}
+    .title p{margin:0;color:var(--muted);font-size:13px}
+
+    .header-actions{display:flex; gap:8px; align-items:center}
+    .btn{
+      background:transparent; border:1px solid var(--border-color);
+      padding:10px 12px; border-radius:10px; color:var(--muted);
+      cursor:pointer; transition:background 150ms;
+    }
+    .btn:hover{background:rgba(0,0,0,0.04)}
+    [data-theme="dark"] .btn:hover{background:rgba(255,255,255,0.04)}
+    .btn.primary{background:linear-gradient(90deg,var(--primary),#2ea0ff); color:#fff; border:0}
+    [data-theme="dark"] .btn.primary{background:linear-gradient(90deg,var(--primary),#a855f7)}
+
+    .conversation{
+      flex:1; 
+      min-height: 0; 
+      overflow-y:auto;
+      padding:24px 24px 24px 24px;
+      display:flex; flex-direction:column; gap:18px;
+      background:radial-gradient(800px 160px at 90% 0%, rgba(0,120,215,0.03), transparent 10%);
+    }
+
+    .msg-row{display:flex; gap:12px; align-items:flex-start; max-width:min(900px,85%)}
+    .msg-row.user{margin-left:auto; flex-direction:row-reverse}
+
+    .msg-avatar{
+      width:36px; height:36px; border-radius:10px;
+      background:rgba(255,255,255,0.9);
+      display:flex; align-items:center; justify-content:center;
+      color:var(--primary); font-weight:700;
+      border:1px solid var(--border-color);
+    }
+    [data-theme="dark"] .msg-avatar{background:rgba(255,255,255,0.06)}
+
+    .bubble{
+      padding:12px 14px; border-radius:12px;
+      background:rgba(255,255,255,0.92); color:var(--text);
+      line-height:1.45; font-size:14px;
+      box-shadow:0 6px 20px var(--shadow-color);
+      word-break:break-word;
+      white-space: pre-wrap;
+    }
+    [data-theme="dark"] .bubble{background:rgba(255,255,255,0.06)}
+    .bubble.user{
+      background:linear-gradient(90deg,var(--bubble-user-start),var(--bubble-user-end));
+      color:#fff; font-weight:600;
+    }
+    [data-theme="dark"] .bubble.user{color:#072a19}
+
+    .meta{font-size:12px; color:var(--muted); margin-top:6px}
+
+    .thinking{
+      padding:10px 12px; border-radius:12px;
+      background:rgba(0,120,215,0.08);
+      color:var(--muted);
+      font-size:13px;
+    }
+    [data-theme="dark"] .thinking{
+      background:rgba(124,58,237,0.12);
+      color:#cbd5e1;
+    }
+
+    .composer-area{
+      flex:0 0 auto;
+      padding:14px 18px;
+      border-top:1px solid var(--border-color);
+      background:linear-gradient(180deg,rgba(255,255,255,0.96),transparent);
+      backdrop-filter:blur(4px);
+    }
+    [data-theme="dark"] .composer-area{
+      background:linear-gradient(180deg,rgba(8,12,18,0.92),transparent);
+    }
+
+    .attached-file{
+      font-size:12px; background:rgba(0,120,215,0.10);
+      color:var(--primary); padding:6px 10px;
+      border-radius:8px; display:inline-flex;
+      align-items:center; gap:8px; margin-bottom:8px;
+      max-width:100%;
+    }
+    .remove-file{
+      background:rgba(0,0,0,0.14); color:inherit; border:none;
+      border-radius:50%; width:18px; height:18px;
+      display:inline-flex; align-items:center; justify-content:center;
+      cursor:pointer; font-weight:bold;
+    }
+    [data-theme="dark"] .remove-file{background:rgba(255,255,255,0.14)}
+
+    .composer{
+      display:flex; gap:12px; align-items:center;
+      max-width:900px; margin:0 auto;
+    }
+    .input{
+      flex:1; display:flex; gap:8px; align-items:center;
+      padding:12px 14px; background:rgba(255,255,255,0.92);
+      border-radius:14px; border:1px solid var(--border-color);
+    }
+    [data-theme="dark"] .input{background:rgba(255,255,255,0.06)}
+    .input textarea{
+      resize:none; border:0; background:transparent;
+      color:inherit; outline:none; width:100%; height:52px; font-size:14px;
+    }
+
+    .actions{display:flex; gap:8px; align-items:center}
+
+    @media (max-width:900px){
+      .app{grid-template-columns:1fr}
+      .sidebar{display:none}
+      .composer{max-width:100%}
+      .msg-row{max-width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="new-chat" id="newChat" role="button" tabindex="0">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        New chat
+      </div>
+      <div class="conversations" id="conversations"></div>
+      <div class="sidebar-footer">
+        <label for="modelSelect" class="model-label">Model</label>
+        <select id="modelSelect" class="model-select">
+          <option value="gpt-35-turbo" selected>gpt-35-turbo</option>
+        </select>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="header">
+        <div class="title">
+          <div class="avatar">HC</div>
+          <div>
+            <h1>HamzaCloud</h1>
+            <p class="small">A concise, professional assistant, HamzaCloudBot</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="themeToggle" class="btn" aria-pressed="false" aria-label="Toggle theme">
+            <span id="themeIcon" style="display:inline-flex;align-items:center">
+              <svg id="iconSun" width="16" height="16" viewBox="0 0 24 24" fill="none" style="display:none">
+                <path d="M12 4v2M12 18v2M4 12h2M18 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M5 19l1.5-1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/>
+              </svg>
+              <svg id="iconMoon" width="16" height="16" viewBox="0 0 24 24" fill="none" style="display:none">
+                <path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <section id="conversation" class="conversation"></section>
+
+      <div class="composer-area">
+        <div id="attachment-display"></div>
+        <form id="composer" class="composer" autocomplete="off">
+          <div class="input">
+            <textarea id="message" placeholder="Send a message. Press Enter to send, Shift+Enter for newline."></textarea>
+          </div>
+          <div class="actions">
+            <button type="button" id="attachBtn" class="btn">Attach</button>
+            <button type="submit" id="sendBtn" class="btn primary">Send</button>
+          </div>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <input id="fileInput" type="file" accept=".txt,.pdf,.md,.docx,.png,.jpg,.jpeg" style="display:none" />
+
+  <script>
+    const dom = {
+      conversations: document.getElementById('conversations'),
+      conversation: document.getElementById('conversation'),
+      newChatBtn: document.getElementById('newChat'),
+      composer: document.getElementById('composer'),
+      messageInput: document.getElementById('message'),
+      sendBtn: document.getElementById('sendBtn'),
+      modelSelect: document.getElementById('modelSelect'),
+      themeToggle: document.getElementById('themeToggle'),
+      themeIcon: { sun: document.getElementById('iconSun'), moon: document.getElementById('iconMoon') },
+      fileInput: document.getElementById('fileInput'),
+      attachBtn: document.getElementById('attachBtn'),
+      attachmentDisplay: document.getElementById('attachment-display')
+    };
+
+    let convos = [];
+    let activeId = null;
+
+    // --- IMPROVED FUNCTION HERE ---
+    function parseBold(text) {
+      if (!text) return '';
+
+      // 1. Remove markdown code blocks like ```markdown or just ```
+      let cleanText = text
+        .replace(/```markdown/gi, '') // Remove ```markdown
+        .replace(/```/g, '');         // Remove remaining ```
+
+      // 2. Escape HTML to prevent XSS
+      let safeHtml = cleanText
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+      // 3. Convert **text** into <strong>text</strong>
+      return safeHtml.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    }
+    // ------------------------------
+
+    function createConv(title, isNew=true){
+      const id='c_'+Date.now();
+      const defaultTitle=isNew?`Chat ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:title;
+      const conv={id,title:defaultTitle,messages:[],isNew};
+      convos.unshift(conv);
+      renderConversations();
+      setActive(id);
+      return conv;
+    }
+
+    function renderConversations(){
+      dom.conversations.innerHTML='';
+      convos.forEach(c=>{
+        const el=document.createElement('div');
+        el.className='conv'+(c.id===activeId?' active':'');
+        el.tabIndex=0;
+        const display=c.title.length>28?c.title.slice(0,25)+'...':c.title;
+        el.innerHTML=`<div style="flex:1" title="${c.title}">${display}</div><div style="font-size:12px;color:var(--muted)">${c.messages.length} msgs</div>`;
+        el.onclick=()=>setActive(c.id);
+        el.onkeydown=e=>{if(e.key==='Enter')setActive(c.id)};
+        dom.conversations.appendChild(el);
+      });
+    }
+
+    function setActive(id){
+      activeId=id;
+      renderConversations();
+      renderConversation();
+    }
+
+    function renderConversation(){
+      dom.conversation.innerHTML='';
+      const conv=convos.find(x=>x.id===activeId);
+      if(!conv) return;
+      conv.messages.forEach(renderMessage);
+      scrollToBottomAfterLayout();
+    }
+
+    function renderMessage(m){
+      const row=document.createElement('div');
+      row.className='msg-row '+(m.role==='user'?'user':'assistant');
+
+      const avatar=document.createElement('div');
+      avatar.className='msg-avatar';
+      avatar.textContent=m.role==='user'?'ME':'HC';
+
+      const wrap=document.createElement('div');
+      const bubble=document.createElement('div');
+      bubble.className='bubble '+(m.role==='user'?'user':'bot');
+      
+      bubble.innerHTML = parseBold(m.content);
+
+      wrap.appendChild(bubble);
+
+      const meta=document.createElement('div');
+      meta.className='meta';
+      meta.textContent=`${m.role==='user'?'You':'HamzaCloud'} · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+      wrap.appendChild(meta);
+
+      row.appendChild(avatar);
+      row.appendChild(wrap);
+      dom.conversation.appendChild(row);
+    }
+
+    function addMessageToActive(role, content){
+      const conv=convos.find(x=>x.id===activeId);
+      if(!conv) return;
+      conv.messages.push({role,content});
+      renderMessage({role,content});
+      if(role==='user' && conv.isNew){
+        conv.title=content.length>40?content.slice(0,37)+'...':content;
+        conv.isNew=false;
+        renderConversations();
+      }
+      scrollToBottomAfterLayout();
+    }
+
+    function scrollToBottomAfterLayout(){
+      const c=dom.conversation;
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        c.scrollTop=c.scrollHeight;
+      }));
+    }
+
+    // Thinking placeholder
+    function showThinking(){
+      const row=document.createElement('div');
+      row.className='msg-row assistant thinking-row';
+      const avatar=document.createElement('div');
+      avatar.className='msg-avatar';
+      avatar.textContent='HC';
+      const wrap=document.createElement('div');
+      const bubble=document.createElement('div');
+      bubble.className='thinking';
+      bubble.textContent='Thinking...';
+      wrap.appendChild(bubble);
+      row.appendChild(avatar);
+      row.appendChild(wrap);
+      dom.conversation.appendChild(row);
+      scrollToBottomAfterLayout();
+      return row;
+    }
+
+    function removeThinking(row){
+      if(row && row.parentNode) row.parentNode.removeChild(row);
+    }
+
+    async function requestReply({message,file}){
+      let endpoint='/chat'; let options;
+      if(file){
+        endpoint='/chat/upload';
+        const fd=new FormData();
+        fd.append('message', message);
+        fd.append('file', file);
+        options={method:'POST', body:fd};
+      }else{
+        options={
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({message})
+        };
+      }
+      const thinkingRow = showThinking();
+      try{
+        const resp=await fetch(endpoint,options);
+        if(!resp.ok){
+          const t=await resp.text();
+          throw new Error(`Server error ${resp.status}: ${t}`);
+        }
+        const data=await resp.json();
+        removeThinking(thinkingRow);
+        addMessageToActive('assistant', data.reply || 'No reply.');
+      }catch(err){
+        console.error(err);
+        removeThinking(thinkingRow);
+        addMessageToActive('assistant','❌ Error: '+err.message);
+      }
+    }
+
+    dom.composer.addEventListener('submit', async e=>{
+      e.preventDefault();
+      const text=dom.messageInput.value.trim();
+      const file=dom.fileInput.files[0];
+      if(!text && !file) return;
+      addMessageToActive('user', text || `File: ${file.name}`);
+      dom.messageInput.value='';
+      clearAttachment();
+      await requestReply({message: text || 'Summarize the file', file});
+    });
+
+    dom.messageInput.addEventListener('keydown', e=>{
+      if(e.key==='Enter' && !e.shiftKey){
+        e.preventDefault();
+        dom.sendBtn.click();
+      }
+    });
+
+    dom.newChatBtn.addEventListener('click', ()=>createConv());
+    dom.attachBtn.addEventListener('click', ()=>dom.fileInput.click());
+    dom.fileInput.addEventListener('change', ()=>{
+      const f=dom.fileInput.files[0];
+      if(f) displayAttachment(f.name);
+    });
+
+    function displayAttachment(filename){
+      dom.attachmentDisplay.innerHTML=`
+        <div class="attached-file">
+          <span>${filename}</span>
+          <button class="remove-file" onclick="clearAttachment()" title="Remove file">&times;</button>
+        </div>`;
+    }
+    function clearAttachment(){dom.fileInput.value='';dom.attachmentDisplay.innerHTML='';}
+
+    function updateThemeIcon(theme){
+      dom.themeIcon.sun.style.display=theme==='light'?'inline-block':'none';
+      dom.themeIcon.moon.style.display=theme==='dark'?'inline-block':'none';
+      dom.themeToggle.setAttribute('aria-pressed', theme==='dark');
+    }
+    function applyTheme(theme,persist=true){
+      document.documentElement.setAttribute('data-theme',theme);
+      updateThemeIcon(theme);
+      if(persist) localStorage.setItem('hc-theme',theme);
+    }
+    dom.themeToggle.addEventListener('click', ()=>{
+      const current=document.documentElement.getAttribute('data-theme')||'light';
+      applyTheme(current==='dark'?'light':'dark', true);
+    });
+
+    (function init(){
+      createConv('Welcome', false);
+      addMessageToActive('assistant',"Hello, I'm HamzaCloudChatBot. I use gpt-35-turbo. Ask me anything or attach a file.");
+    })();
+  </script>
+</body>
+</html>
