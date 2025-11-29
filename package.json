@@ -1,20 +1,22 @@
 {
   "name": "chatbot-project",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
+    "@azure/storage-blob": "^12.29.1",
     "axios": "^1.7.2",
+    "azure-storage": "^2.10.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "express": "^4.21.1",
+    "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "openai": "^4.63.0",
     "pdf-parse": "^1.1.1",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "azure-storage": "^2.10.6",
-    "uuid": "^9.0.1",
-    "morgan": "^1.10.0"
+    "uuid": "^9.0.1"
   }
 }
