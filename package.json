@@ -1,24 +1,20 @@
 {
-  "name": "project-aichatpot",
+  "name": "chatbot-project",
   "version": "1.0.0",
-  "description": "",
-  "main": "app.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node app.js",
-    "cli": "node cli.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
   "dependencies": {
-    "@azure/storage-blob": "^12.29.1",
+    "axios": "^1.7.2",
+    "express": "^4.21.1",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.63.0",
+    "pdf-parse": "^1.1.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^5.1.0",
-    "multer": "^2.0.2",
-    "node-fetch": "^3.3.2",
-    "openai": "^6.8.1"
+    "dotenv": "^16.4.5",
+    "azure-storage": "^2.10.6",
+    "uuid": "^9.0.1",
+    "morgan": "^1.10.0"
   }
 }
