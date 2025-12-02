@@ -11,7 +11,7 @@ import crypto from "crypto";
 
 dotenv.config();
 
-// Required environment variables
+// Variables requises
 const required = [
   "AZURE_OPENAI_API_KEY",
   "AZURE_OPENAI_ENDPOINT",
@@ -27,15 +27,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 
-// Middleware
 app.use(cors({ origin: "*", methods: ["GET","POST"], allowedHeaders: ["Content-Type"] }));
 app.use(express.json());
 app.use(express.static(__dirname));
 
-// File upload
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Azure OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.AZURE_OPENAI_API_KEY,
   baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT}`,
@@ -43,202 +40,177 @@ const openai = new OpenAI({
   defaultQuery: { "api-version": "2024-02-15-preview" }
 });
 
-// Azure Blob storage
 const blobService = BlobServiceClient.fromConnectionString(process.env.AZURE_BLOB_CONNECTION_STRING);
 const CONTAINER = "container-rag";
 const containerClient = blobService.getContainerClient(CONTAINER);
 
+// 🧠 MÉMOIRE DE SESSION AMÉLIORÉE (Objet au lieu d'Array)
+const sessions = {}; 
+
 async function ensureContainer() {
   try {
-    const created = await containerClient.createIfNotExists();
-    if (created.succeeded) {
-      console.log(`✅ Blob container created: ${CONTAINER} (private access)`);
-    } else {
-      console.log(`✅ Blob container exists: ${CONTAINER}`);
-    }
+    await containerClient.createIfNotExists();
   } catch (err) {
     console.error("❌ ensureContainer error:", err.message);
   }
 }
 
 async function uploadToBlob(file) {
-  if (!file?.buffer) throw new Error("Invalid file upload.");
-  
   const blobName = file.originalname;
   const blob = containerClient.getBlockBlobClient(blobName);
-
   await blob.uploadData(file.buffer, {
     blobHTTPHeaders: { blobContentType: file.mimetype || "application/pdf" }
   });
-
-  console.log(`✅ Uploaded blob: ${blob.url}`); // URL is private
   return blob.url;
 }
 
-// Trigger Azure Search Indexer
 async function runIndexer() {
   const indexerName = process.env.SEARCH_INDEXER || "rag-indexer";
-  const url = `https://${process.env.SEARCH_SERVICE}.search.windows.net/indexers/${indexerName}/run?api-version=2025-09-01`;
-  const resp = await fetch(url, { method: "POST", headers: { "api-key": process.env.SEARCH_API_KEY } });
-  if (!resp.ok) {
-    const text = await resp.text();
-    console.error("❌ Indexer run failed:", resp.status, text);
-  } else {
-    console.log("✅ Indexer triggered:", indexerName);
-  }
+  const url = `https://${process.env.SEARCH_SERVICE}.search.windows.net/indexers/${indexerName}/run?api-version=2024-07-01`;
+  await fetch(url, { method: "POST", headers: { "api-key": process.env.SEARCH_API_KEY } });
 }
 
-// RAG search
-async function searchDocuments(query) {
+// Recherche avec Filtre Strict
+async function searchDocuments(query, filename = null) {
   const base = `https://${process.env.SEARCH_SERVICE}.search.windows.net`;
   const index = encodeURIComponent(process.env.SEARCH_INDEX);
-  const apiVersion = "2025-09-01";
+  const apiVersion = "2024-07-01"; 
 
-  const semanticConfig = process.env.SEMANTIC_CONFIGURATION;
-  if (semanticConfig) {
-    try {
-      const resp = await fetch(`${base}/indexes/${index}/docs/search?api-version=${apiVersion}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "api-key": process.env.SEARCH_API_KEY },
-        body: JSON.stringify({
-          search: query,
-          top: 5,
-          queryType: "semantic",
-          semanticConfiguration: semanticConfig,
-          select: "id,content"
-        })
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (Array.isArray(data.value) && data.value.length) {
-          const ctx = data.value.map(v => v.content).filter(Boolean).join("\n\n");
-          console.log("✅ Semantic context length:", ctx.length);
-          return ctx;
-        }
-      }
-    } catch (e) {
-      console.warn("⚠️ Semantic search exception:", e.message);
-    }
-  }
+  // Filtre OData strict sur le nom du fichier
+  const filter = filename ? `&$filter=metadata_storage_name eq '${encodeURIComponent(filename)}'` : "";
 
-  // Full-text fallback
+  console.log(`🔍 Searching: "${query}" | File Filter: ${filename || "NONE"}`);
+  console.log("✅ Context found length:", ctx.length);
+  console.log("📜 PREVIEW DU CONTENU TROUVÉ :\n", ctx.slice(0, 500)); // Affiche les 500 premiers caractères
   try {
-    const resp = await fetch(`${base}/indexes/${index}/docs?api-version=${apiVersion}&search=${encodeURIComponent(query)}&queryType=full&searchFields=content&select=id,content&top=5`, {
-      headers: { "api-key": process.env.SEARCH_API_KEY }
-    });
-    if (!resp.ok) return "";
+    const url = `${base}/indexes/${index}/docs?api-version=${apiVersion}&search=${encodeURIComponent(query)}&queryType=full&searchFields=content&select=content&top=5${filter}`;
+    
+    const resp = await fetch(url, { headers: { "api-key": process.env.SEARCH_API_KEY } });
     const data = await resp.json();
+    
     if (!Array.isArray(data.value)) return "";
-    const ctx = data.value.map(v => v.content).filter(Boolean).join("\n\n");
-    console.log("✅ Full-text context length:", ctx.length);
-    return ctx;
+
+    return data.value.map(v => v.content).filter(Boolean).join("\n\n");
   } catch (err) {
-    console.error("❌ Full-text search exception:", err.message);
+    console.error("❌ Search exception:", err.message);
     return "";
   }
 }
 
-// Session memory
-const sessions = {};
+// Construction du prompt avec Historique
+function buildMessages(history, context, question) {
+    const systemPrompt = `
+You are a helpful assistant using the provided PDF content.
+- If the answer is in the PDF context, use it.
+- If the context is empty, rely on conversation history.
+- If you don't know, say "I cannot find that in the document".
+`;
 
-// Build messages with clear structured instructions
-function buildMessages(sessionHistory, context, question) {
-  const trimmedContext = (context || "").slice(0, 12000);
-
-  const turnContent = `
-You are a professional assistant. Answer clearly and concisely.
-
-- Use the PDF content if relevant.
-- Output structured markdown.
-- When listing advantages, features, or items:
-  - Start with a bold title (e.g., "**Advantages of Docker:**") on its own line.
-  - REQUIRED: Put every single bullet point on a BRAND NEW LINE.
-  - Use this exact format for bullets: "- **Keyword:** Description".
-  - Do not bunch list items into a paragraph.
-
-${trimmedContext ? "PDF content:\n```\n" + trimmedContext + "\n```" : ""}
+    const userContent = `
+Context from PDF:
+"""
+${context}
+"""
 
 Question: ${question}
 `;
 
-  return [...sessionHistory, { role: "user", content: turnContent }];
+    // On renvoie : System + Historique + Nouvelle Question (avec contexte)
+    return [
+        { role: "system", content: systemPrompt },
+        ...history, 
+        { role: "user", content: userContent }
+    ];
 }
 
-// Call OpenAI
 async function callLLM(messages) {
-  try {
-    const resp = await openai.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT,
-      messages,
-      temperature: 0,  // deterministic
-      max_tokens: 700
-    });
-    return resp.choices?.[0]?.message?.content || "No reply.";
-  } catch (err) {
-    console.error("❌ OpenAI Bad Request:", err.response?.status, err.response?.data || err.message);
-    throw err;
-  }
+  const resp = await openai.chat.completions.create({
+    model: process.env.AZURE_OPENAI_DEPLOYMENT,
+    messages,
+    temperature: 0.3,
+    max_tokens: 800
+  });
+  return resp.choices?.[0]?.message?.content || "No reply.";
 }
 
-// Generate sessionId
-function ensureSessionId(idFromClient) {
-  return idFromClient && typeof idFromClient === "string" ? idFromClient : crypto.randomUUID();
+function ensureSessionId(id) {
+  return id && typeof id === "string" ? id : crypto.randomUUID();
 }
 
-// Chat endpoint
-app.post("/chat", async (req, res) => {
-  const { sessionId: clientSessionId, message } = req.body;
-  if (!message || !message.trim()) return res.status(400).json({ error: "message is required" });
+// --- ROUTES ---
 
-  const sessionId = ensureSessionId(clientSessionId);
-  if (!sessions[sessionId]) sessions[sessionId] = [];
-
-  try {
-    const context = await searchDocuments(message);
-    const messages = buildMessages(sessions[sessionId], context, message);
-    const reply = await callLLM(messages);
-
-    sessions[sessionId].push({ role: "user", content: message });
-    sessions[sessionId].push({ role: "assistant", content: reply });
-
-    res.json({ reply, sessionId });
-  } catch (err) {
-    res.status(500).json({ error: "Chat failed.", detail: err.message });
-  }
-});
-
-// Chat with file upload
+// 1. Route Upload (Nouvelle conversation sur un NOUVEAU fichier)
 app.post("/chat/upload", upload.single("file"), async (req, res) => {
   const { sessionId: clientSessionId, message } = req.body;
   const file = req.file;
-  if (!file) return res.status(400).json({ error: "File is required." });
+  if (!file) return res.status(400).json({ error: "File required" });
 
   const sessionId = ensureSessionId(clientSessionId);
-  if (!sessions[sessionId]) sessions[sessionId] = [];
 
   try {
+    // 🛑 RESET TOTAL DE LA SESSION : Nouvelle Upload = On oublie tout l'avant
+    sessions[sessionId] = {
+        currentFile: file.originalname,
+        history: []
+    };
+
     await ensureContainer();
     await uploadToBlob(file);
     await runIndexer();
+    
+    // Petite pause pour laisser l'indexer finir (2s)
+    await new Promise(r => setTimeout(r, 2000));
 
-    const question = message?.trim() || "Please summarize the uploaded PDF.";
-    const context = await searchDocuments(question);
-    const messages = buildMessages(sessions[sessionId], context, question);
+    const question = message?.trim() || "Summarize this document.";
+    
+    // Recherche AVEC le nom du fichier
+    const context = await searchDocuments(question, sessions[sessionId].currentFile);
+    
+    const messages = buildMessages(sessions[sessionId].history, context, question);
     const reply = await callLLM(messages);
 
-    sessions[sessionId].push({ role: "user", content: question });
-    sessions[sessionId].push({ role: "assistant", content: reply });
+    // Sauvegarde dans l'historique
+    sessions[sessionId].history.push({ role: "user", content: question });
+    sessions[sessionId].history.push({ role: "assistant", content: reply });
 
     res.json({ reply, sessionId });
   } catch (err) {
-    res.status(500).json({ error: "Upload chat failed.", detail: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Health check
-app.get("/healthz", (_req, res) => {
-  res.json({ ok: true, uptime: process.uptime() });
+// 2. Route Chat (Question suivante sur le MÊME fichier)
+app.post("/chat", async (req, res) => {
+  const { sessionId: clientSessionId, message } = req.body;
+  if (!message) return res.status(400).json({ error: "Message required" });
+
+  const sessionId = ensureSessionId(clientSessionId);
+
+  // Si la session n'existe pas (ex: redémarrage serveur), on initie vide
+  if (!sessions[sessionId]) {
+      sessions[sessionId] = { currentFile: null, history: [] };
+  }
+
+  try {
+    const activeFile = sessions[sessionId].currentFile;
+    
+    // Recherche (utilisant le fichier mémorisé)
+    const context = await searchDocuments(message, activeFile);
+    
+    const messages = buildMessages(sessions[sessionId].history, context, message);
+    const reply = await callLLM(messages);
+
+    // Sauvegarde
+    sessions[sessionId].history.push({ role: "user", content: message });
+    sessions[sessionId].history.push({ role: "assistant", content: reply });
+
+    res.json({ reply, sessionId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
+app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🔥 RAG Server running on http://127.0.0.1:${PORT}`));
+app.listen(PORT, () => console.log(`🔥 RAG Server running on port ${PORT}`));

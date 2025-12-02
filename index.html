@@ -325,30 +325,26 @@
     let convos = [];
     let activeId = null;
 
-    // --- IMPROVED FUNCTION HERE ---
+    // Helper to make bold text look nice
     function parseBold(text) {
       if (!text) return '';
-
-      // 1. Remove markdown code blocks like ```markdown or just ```
       let cleanText = text
-        .replace(/```markdown/gi, '') // Remove ```markdown
-        .replace(/```/g, '');         // Remove remaining ```
-
-      // 2. Escape HTML to prevent XSS
+        .replace(/```markdown/gi, '')
+        .replace(/```/g, ''); 
       let safeHtml = cleanText
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
-
-      // 3. Convert **text** into <strong>text</strong>
       return safeHtml.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     }
-    // ------------------------------
 
     function createConv(title, isNew=true){
       const id='c_'+Date.now();
       const defaultTitle=isNew?`Chat ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:title;
-      const conv={id,title:defaultTitle,messages:[],isNew};
+      
+      // ✅ FIX 1: Initialize sessionId as null
+      const conv={id, title:defaultTitle, messages:[], isNew, sessionId: null};
+      
       convos.unshift(conv);
       renderConversations();
       setActive(id);
@@ -429,7 +425,6 @@
       }));
     }
 
-    // Thinking placeholder
     function showThinking(){
       const row=document.createElement('div');
       row.className='msg-row assistant thinking-row';
@@ -452,21 +447,32 @@
       if(row && row.parentNode) row.parentNode.removeChild(row);
     }
 
+    // ✅ FIX 2: UPDATED REQUEST FUNCTION
     async function requestReply({message,file}){
-      let endpoint='/chat'; let options;
+      const conv = convos.find(x => x.id === activeId);
+      let endpoint='/chat'; 
+      let options;
+
       if(file){
         endpoint='/chat/upload';
         const fd=new FormData();
         fd.append('message', message);
         fd.append('file', file);
+        // Send session ID if we have one
+        if(conv && conv.sessionId) fd.append('sessionId', conv.sessionId);
         options={method:'POST', body:fd};
       }else{
         options={
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({message})
+          body:JSON.stringify({
+            message,
+            // Send session ID so server knows which file to use
+            sessionId: conv ? conv.sessionId : null 
+          })
         };
       }
+      
       const thinkingRow = showThinking();
       try{
         const resp=await fetch(endpoint,options);
@@ -476,6 +482,12 @@
         }
         const data=await resp.json();
         removeThinking(thinkingRow);
+        
+        // ✅ FIX 3: SAVE THE SESSION ID FROM SERVER
+        if(conv && data.sessionId) {
+          conv.sessionId = data.sessionId;
+        }
+
         addMessageToActive('assistant', data.reply || 'No reply.');
       }catch(err){
         console.error(err);
