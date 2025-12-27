@@ -109,7 +109,7 @@ You mentioned these image files:
 - `architu.png` — project architecture / chatbot flow diagram
 - `IndexerRAG.png` — indexer success / number of docs uploaded
 - `chatbot1.png` — chatbot answering from an uploaded resume (example 1)
-- `chatbot2.pnd` — (possible typo) another chatbot example; recommend renaming to `chatbot2.png`
+- `chatbot2.png` — another chatbot example
 
 Examples to add to README:
 
@@ -141,13 +141,6 @@ git add images/architu.png images/IndexerRAG.png images/chatbot1.png images/chat
 git commit -m "Add architecture and chatbot screenshots"
 git push
 ```
-If chatbot2 file has extension `.pnd`, rename it first:
-```bash
-git mv images/chatbot2.pnd images/chatbot2.png
-git commit -m "Rename chatbot2.pnd -> chatbot2.png"
-git push
-```
-
 ---
 
 ## Indexer & RAG notes
